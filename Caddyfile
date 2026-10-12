@@ -1,0 +1,5 @@
+# Generated defaults; DOMAIN comes from server/.env
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy signaling:8080
+}
