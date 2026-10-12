@@ -1,0 +1,18 @@
+{
+  "name": "kidscall-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Invite-only single-group signaling server for the KidsCall video call app",
+  "type": "module",
+  "main": "src/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

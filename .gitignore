@@ -1,0 +1,19 @@
+# Node
+node_modules/
+server/data/
+*.log
+
+# iOS / Xcode
+ios/KidsCall/KidsCall.xcodeproj/
+ios/KidsCall/*.xcworkspace/
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+
+# Secrets
+*.p8
+.env
+secrets/*
+!secrets/README.md
