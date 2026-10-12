@@ -6,9 +6,22 @@ on:
     paths: ["ios/**", ".github/workflows/ios-build.yml"]
 jobs:
   build:
-    # Compiles the app for the iOS Simulator (no signing) to catch build errors.
+    # Compiles the app without signing to catch build errors:
+    #   - Debug for the iOS Simulator
+    #   - Release for a real device (same configuration the TestFlight workflow archives)
     runs-on: macos-15
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: simulator-debug
+            configuration: Debug
+            destination: generic/platform=iOS Simulator
+          - name: device-release
+            configuration: Release
+            destination: generic/platform=iOS
+    name: build (${{ matrix.name }})
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
@@ -19,15 +32,15 @@ jobs:
       - name: Resolve Swift packages
         working-directory: ios/KidsCall
         run: xcodebuild -resolvePackageDependencies -project KidsCall.xcodeproj -scheme KidsCall
-      - name: Build (iOS Simulator)
+      - name: Build (${{ matrix.name }})
         working-directory: ios/KidsCall
         run: |
           set -o pipefail
           xcodebuild build \
             -project KidsCall.xcodeproj \
             -scheme KidsCall \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
+            -configuration '${{ matrix.configuration }}' \
+            -destination '${{ matrix.destination }}' \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)|\*\* " || true
