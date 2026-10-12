@@ -77,9 +77,34 @@ cd server && npm test
 
 ---
 
-## 3. iPhone アプリのビルド
+## 3. iPhone アプリのビルドと配布
 
-必要なもの: Mac + Xcode 15 以上、Apple Developer Program（VoIP プッシュと実機配布に必要）、[XcodeGen](https://github.com/yonaskolb/XcodeGen)。
+必要なもの: **Apple Developer Program**（年 99 ドル。実機配布・TestFlight・着信プッシュに必要）。Mac はあると便利ですが、無くても配布できます（方法 A）。
+
+アプリは SwiftUI + [stasel/WebRTC](https://github.com/stasel/WebRTC)（Google WebRTC のバイナリ配布）+ CallKit/PushKit で、Xcode プロジェクトは [XcodeGen](https://github.com/yonaskolb/XcodeGen) の `ios/KidsCall/project.yml` から生成します。`ios/` に変更があるたびに GitHub Actions が iOS シミュレータ向けにコンパイルしてエラーを検出します。
+
+### 方法 A: Mac を使わずに配布する（GitHub Actions → TestFlight）
+
+GitHub Actions の macOS ランナーでビルドし、TestFlight に送ります。
+
+1. [App Store Connect](https://appstoreconnect.apple.com/) → **ユーザとアクセス → 統合 → App Store Connect API** で **Admin** 権限のキーを作成し、`.p8` をダウンロード。**Issuer ID** と **Key ID** も控える。
+2. [Apple Developer → Identifiers](https://developer.apple.com/account/resources/identifiers/list) で App ID を登録（例 `com.自分の名前.kidscall`、Capabilities で **Push Notifications** を有効化）。続けて App Store Connect → **App** で新規 App を作成し、その Bundle ID を選ぶ。
+3. GitHub のリポジトリ → **Settings → Secrets and variables → Actions** に次を登録:
+
+   | Secret | 値 |
+   |---|---|
+   | `APPLE_TEAM_ID` | Apple Developer の Team ID（10文字） |
+   | `ASC_KEY_ID` | API キーの Key ID |
+   | `ASC_ISSUER_ID` | API キーの Issuer ID |
+   | `ASC_KEY_P8_BASE64` | `.p8` を base64 にしたもの（Mac/Linux: `base64 -i AuthKey_XXXX.p8`） |
+   | `BUNDLE_ID` | 手順 2 で決めた Bundle ID |
+
+4. GitHub → **Actions → ios testflight → Run workflow**。10〜20 分でビルドが TestFlight に届きます。
+5. App Store Connect の **TestFlight** で家族をテスターに追加すると、各自の iPhone の TestFlight アプリからインストールできます（内部テスターは審査なし・最大100人）。
+
+署名用の証明書とプロビジョニングプロファイルは Xcode のクラウド署名が自動で作るので、手動で用意する必要はありません。
+
+### 方法 B: Xcode から直接インストールする（Mac がある場合）
 
 ```bash
 brew install xcodegen
@@ -94,20 +119,13 @@ Xcode で:
 2. Capabilities に **Push Notifications** と **Background Modes (Voice over IP, Audio)** が付いていることを確認（project.yml で設定済み）。
 3. 実機を選んで Run。
 
-Swift Package として [stasel/WebRTC](https://github.com/stasel/WebRTC)（Google WebRTC のバイナリ配布）を使います。初回は Xcode が自動で取得します。
-
 ### VoIP プッシュ（着信）の設定
 
-1. [Apple Developer](https://developer.apple.com/account/resources/authkeys/list) で **Key** を作成し、*Apple Push Notifications service (APNs)* を有効にして `.p8` をダウンロード。
+1. [Apple Developer](https://developer.apple.com/account/resources/authkeys/list) で **Key** を作成し、*Apple Push Notifications service (APNs)* を有効にして `.p8` をダウンロード（方法 A の App Store Connect API キーとは別物です）。
 2. `.p8` を `secrets/` に置き、`server/.env` の `APNS_*` 行のコメント（先頭の `#`）を外して `APNS_KEY_PATH / APNS_KEY_ID / APNS_TEAM_ID / APNS_BUNDLE_ID` を設定し、`docker compose restart signaling`。
-3. Xcode から直接インストールしたビルドは `APNS_ENV=sandbox`、TestFlight / App Store 配布は `APNS_ENV=production`。
-4. 本番配布なら `project.yml` の `aps-environment` を `production` に。
+3. TestFlight 配布なら `APNS_ENV=production`、Xcode から直接インストールしたビルドなら `APNS_ENV=sandbox`。
 
 設定しなくても動きますが、その場合「アプリを開いている端末しか着信に気づけない」状態になります。
-
-### 家族への配布
-
-App Store に出さず家族だけに配るなら **TestFlight**（最大100台の内部/外部テスト）が簡単です。Ad Hoc 配布でも構いません。
 
 ---
 

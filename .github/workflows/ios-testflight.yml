@@ -1,0 +1,76 @@
+name: ios testflight
+# Builds a signed release and uploads it to TestFlight without a Mac.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   APPLE_TEAM_ID     Apple Developer Team ID (10 characters)
+#   ASC_KEY_ID        App Store Connect API key ID
+#   ASC_ISSUER_ID     App Store Connect API issuer ID
+#   ASC_KEY_P8_BASE64 The AuthKey_XXXX.p8 file, base64 encoded (base64 -i AuthKey.p8)
+#   BUNDLE_ID         e.g. com.yourname.kidscall (must match the app record in App Store Connect)
+on:
+  workflow_dispatch:
+jobs:
+  testflight:
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      BUNDLE_ID: ${{ secrets.BUNDLE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        run: |
+          for v in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID BUNDLE_ID; do
+            if [ -z "${!v}" ]; then echo "::error::secret $v is not set"; exit 1; fi
+          done
+          if [ -z "${{ secrets.ASC_KEY_P8_BASE64 }}" ]; then echo "::error::secret ASC_KEY_P8_BASE64 is not set"; exit 1; fi
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Write App Store Connect API key
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          echo "${{ secrets.ASC_KEY_P8_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/keys/AuthKey.p8"
+          chmod 600 "$RUNNER_TEMP/keys/AuthKey.p8"
+      - name: Generate Xcode project
+        working-directory: ios/KidsCall
+        run: xcodegen generate
+      - name: Archive (cloud-managed signing)
+        working-directory: ios/KidsCall
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project KidsCall.xcodeproj \
+            -scheme KidsCall \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/KidsCall.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            | tee archive.log | grep -E "error:|ARCHIVE (SUCCEEDED|FAILED)|\*\* " || true
+          grep -q "ARCHIVE SUCCEEDED" archive.log
+      - name: Upload to TestFlight
+        working-directory: ios/KidsCall
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/KidsCall.xcarchive" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/keys/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            | tee export.log | grep -E "error:|EXPORT (SUCCEEDED|FAILED)|Upload|\*\* " || true
+          grep -q "EXPORT SUCCEEDED" export.log
+      - name: Show errors
+        if: failure()
+        working-directory: ios/KidsCall
+        run: grep -hE "error" archive.log export.log 2>/dev/null | sort -u | head -100 || true
