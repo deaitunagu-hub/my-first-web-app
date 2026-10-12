@@ -86,29 +86,23 @@ enum ServerMessage {
     case error(code: String, inReplyTo: String?)
     case unknown(type: String)
 
-    private struct Envelope: Decodable { let type: String }
-
     static func decode(_ data: Data) throws -> ServerMessage {
         let decoder = JSONDecoder()
         let envelope = try decoder.decode(Envelope.self, from: data)
         switch envelope.type {
         case "challenge":
-            struct M: Decodable { let nonce: String }
-            return .challenge(nonce: try decoder.decode(M.self, from: data).nonce)
+            return .challenge(nonce: try decoder.decode(ChallengeBody.self, from: data).nonce)
         case "welcome":
             return .welcome(try decoder.decode(Welcome.self, from: data))
         case "members.updated":
-            struct M: Decodable { let members: [Member] }
-            return .membersUpdated(try decoder.decode(M.self, from: data).members)
+            return .membersUpdated(try decoder.decode(MembersBody.self, from: data).members)
         case "call.state":
             return .callState(try decoder.decode(CallState.self, from: data))
         case "signal":
-            struct M: Decodable { let from: String; let payload: SignalPayload }
-            let m = try decoder.decode(M.self, from: data)
+            let m = try decoder.decode(SignalBody.self, from: data)
             return .signal(from: m.from, payload: m.payload)
         case "invite.created":
-            struct M: Decodable { let token: String; let url: String; let expiresAt: Double }
-            let m = try decoder.decode(M.self, from: data)
+            let m = try decoder.decode(InviteBody.self, from: data)
             return .inviteCreated(Invite(token: m.token, url: m.url, expiresAt: Date(timeIntervalSince1970: m.expiresAt / 1000)))
         case "invite.revoked":
             return .inviteRevoked
@@ -117,14 +111,20 @@ enum ServerMessage {
         case "pong":
             return .pong
         case "error":
-            struct M: Decodable { let code: String; let inReplyTo: String? }
-            let m = try decoder.decode(M.self, from: data)
+            let m = try decoder.decode(ErrorBody.self, from: data)
             return .error(code: m.code, inReplyTo: m.inReplyTo)
         default:
             return .unknown(type: envelope.type)
         }
     }
 }
+
+private struct Envelope: Decodable { let type: String }
+private struct ChallengeBody: Decodable { let nonce: String }
+private struct MembersBody: Decodable { let members: [Member] }
+private struct SignalBody: Decodable { let from: String; let payload: SignalPayload }
+private struct InviteBody: Decodable { let token: String; let url: String; let expiresAt: Double }
+private struct ErrorBody: Decodable { let code: String; let inReplyTo: String? }
 
 // MARK: - Client -> server messages
 
