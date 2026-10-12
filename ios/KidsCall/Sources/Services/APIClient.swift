@@ -11,6 +11,9 @@ struct RegistrationResponse: Decodable {
     }
 }
 
+private struct ChallengeResponse: Decodable { let nonce: String }
+private struct APIErrorBody: Decodable { let error: String }
+
 enum APIError: LocalizedError {
     case server(code: String, status: Int)
     case invalidResponse
@@ -62,8 +65,7 @@ struct APIClient {
     }
 
     private func challenge() async throws -> String {
-        struct Challenge: Decodable { let nonce: String }
-        let c: Challenge = try await post("/v1/challenge", body: [:])
+        let c: ChallengeResponse = try await post("/v1/challenge", body: [:])
         return c.nonce
     }
 
@@ -87,8 +89,7 @@ struct APIClient {
                 throw APIError.invalidResponse
             }
         }
-        struct ErrorBody: Decodable { let error: String }
-        if let err = try? JSONDecoder().decode(ErrorBody.self, from: data) {
+        if let err = try? JSONDecoder().decode(APIErrorBody.self, from: data) {
             throw APIError.server(code: err.error, status: http.statusCode)
         }
         throw APIError.server(code: "http_\(http.statusCode)", status: http.statusCode)
