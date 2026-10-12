@@ -41,33 +41,31 @@ index.html          (既存の GitHub Pages ページ。アプリとは無関係
 
 ## 2. サーバーのセットアップ
 
-必要なもの: Linux サーバー1台（VPS で可）、ドメイン名、TLS 証明書（Let's Encrypt）、Docker。
+必要なもの: Linux サーバー1台（月数百円の VPS で可）、ドメイン名（サブドメインで可）、Docker。
+
+1. ドメインの DNS で **A レコード**をサーバーのグローバル IP に向ける（例: `call.example.com`）。
+2. サーバーのファイアウォールで `80/tcp`, `443/tcp`, `3478/udp`, `3478/tcp`, `49160-49200/udp` を開ける。
+3. サーバーで次を実行:
 
 ```bash
-git clone <this repo>
+git clone https://github.com/deaitunagu-hub/my-first-web-app.git
 cd my-first-web-app
-cp server/.env.example server/.env
-# server/.env を編集:
-#   PUBLIC_URL   = https://call.example.com（アプリが接続する URL）
-#   SETUP_TOKEN  = 長いランダム文字列（最初の1台の登録にだけ使う）
-#   TURN_SECRET  = 長いランダム文字列
-#   TURN_URLS / STUN_URLS = 自分のドメインに置き換え
-#   APNS_*       = Apple Developer の APNs Auth Key 情報（後述）
-mkdir -p secrets   # .p8 と TURN 用の証明書を置く（git には入りません）
-docker compose up -d
+./scripts/setup.sh
 ```
 
-- `signaling` コンテナは `127.0.0.1:8080` で HTTP/WebSocket を待ち受けます。**必ず** Caddy や nginx などで TLS 終端して `https://call.example.com` → `localhost:8080` に転送してください（WebSocket の `Upgrade` を通す設定が必要）。
-- `coturn` は `3478/udp,tcp` と `5349/tcp`、中継ポート `49160-49200/udp` を開けてください。
+スクリプトがドメイン名を聞き、秘密鍵（`SETUP_TOKEN`, `TURN_SECRET`）を自動生成して `server/.env` に書き、Caddy（HTTPS 自動取得）+ シグナリングサーバー + coturn を起動します。最後に **アプリに入力するサーバー URL と合言葉** が表示されます。
+
+- HTTPS 証明書は Caddy が Let's Encrypt から自動取得・更新します。手動設定は不要です。
+- 動作確認: `curl https://<ドメイン>/v1/health` が `{"ok":true,...}` を返せば OK。
 - 開発時は Docker を使わず `cd server && npm install && npm start` でも動きます（`node >= 20`）。
 
 ### グループを作った後
 
-最初の1台を登録し終えたら、`server/.env` の `SETUP_TOKEN` を空にして `docker compose restart signaling` してください。以後このサーバーでは **誰もグループを作れません**（既存グループへの招待は管理者からのみ可能）。
+最初の1台を登録し終えたら、`server/.env` の `SETUP_TOKEN=` を空にして `docker compose restart signaling` してください。以後このサーバーでは **誰もグループを作れません**（既存グループへの招待は管理者からのみ可能）。
 
 ### 初期化したいとき
 
-`docker compose down && docker volume rm <project>_signaling-data` で全メンバーが消えます。もう一度 `SETUP_TOKEN` を設定して最初の1台から登録し直します。
+`docker compose down && docker volume rm my-first-web-app_signaling-data` で全メンバーが消えます。`./scripts/setup.sh` を再実行すると新しい `SETUP_TOKEN` が表示されるので、最初の1台から登録し直します。
 
 ### サーバーのテスト
 
@@ -75,7 +73,7 @@ docker compose up -d
 cd server && npm test
 ```
 
-招待の1回限り・10分失効・5台上限・署名検証・非メンバー拒否・削除時の即切断などを自動テストしています。
+招待の1回限り・10分失効・5台上限・署名検証・非メンバー拒否・削除時の即切断などを自動テストしています。GitHub Actions でも `server/` の変更時に自動実行されます。
 
 ---
 
@@ -101,7 +99,7 @@ Swift Package として [stasel/WebRTC](https://github.com/stasel/WebRTC)（Goog
 ### VoIP プッシュ（着信）の設定
 
 1. [Apple Developer](https://developer.apple.com/account/resources/authkeys/list) で **Key** を作成し、*Apple Push Notifications service (APNs)* を有効にして `.p8` をダウンロード。
-2. `.p8` を `secrets/` に置き、`server/.env` の `APNS_KEY_PATH / APNS_KEY_ID / APNS_TEAM_ID / APNS_BUNDLE_ID` を設定。
+2. `.p8` を `secrets/` に置き、`server/.env` の `APNS_*` 行のコメント（先頭の `#`）を外して `APNS_KEY_PATH / APNS_KEY_ID / APNS_TEAM_ID / APNS_BUNDLE_ID` を設定し、`docker compose restart signaling`。
 3. Xcode から直接インストールしたビルドは `APNS_ENV=sandbox`、TestFlight / App Store 配布は `APNS_ENV=production`。
 4. 本番配布なら `project.yml` の `aps-environment` を `production` に。
 

@@ -1,12 +1,25 @@
-# KidsCall backend: signaling server + coturn (TURN/STUN relay).
+# KidsCall backend: HTTPS front (Caddy) + signaling server + coturn (TURN/STUN).
 #
-#   cp server/.env.example server/.env   # edit values
-#   docker compose up -d
+#   ./scripts/setup.sh        # asks for your domain, generates secrets, starts everything
 #
-# Put a TLS-terminating reverse proxy (Caddy, nginx, ...) in front of
-# port 8080 so the app talks to https://PUBLIC_URL. The server itself
-# speaks plain HTTP/WS on 8080 only.
+# Caddy obtains and renews the Let's Encrypt certificate for DOMAIN automatically
+# and proxies https://DOMAIN -> signaling:8080 (WebSocket included).
+# Ports to open on the server firewall: 80/tcp, 443/tcp, 3478/udp+tcp, 49160-49200/udp.
 services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file: ./server/.env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - signaling
+
   signaling:
     build: ./server
     restart: unless-stopped
@@ -16,8 +29,8 @@ services:
     volumes:
       - signaling-data:/data
       - ./secrets:/secrets:ro
-    ports:
-      - "127.0.0.1:8080:8080"
+    expose:
+      - "8080"
 
   coturn:
     image: coturn/coturn:4.6
@@ -27,7 +40,6 @@ services:
     command: >
       turnserver
       --listening-port=3478
-      --tls-listening-port=5349
       --min-port=49160 --max-port=49200
       --realm=kidscall
       --use-auth-secret
@@ -35,14 +47,11 @@ services:
       --fingerprint
       --no-multicast-peers
       --no-cli
-      --no-rfc5780
-      --no-stun-backward-compatibility
-      --response-origin-only-with-rfc5780
-      --cert=/secrets/turn-cert.pem
-      --pkey=/secrets/turn-key.pem
+      --no-tls --no-dtls
+      ${TURN_EXTRA_ARGS:-}
       --log-file=stdout
-    volumes:
-      - ./secrets:/secrets:ro
 
 volumes:
+  caddy-data:
+  caddy-config:
   signaling-data:
