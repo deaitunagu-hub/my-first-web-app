@@ -1,0 +1,38 @@
+name: ios build
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios-build.yml"]
+  pull_request:
+    paths: ["ios/**", ".github/workflows/ios-build.yml"]
+jobs:
+  build:
+    # Compiles the app for the iOS Simulator (no signing) to catch build errors.
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        working-directory: ios/KidsCall
+        run: xcodegen generate
+      - name: Resolve Swift packages
+        working-directory: ios/KidsCall
+        run: xcodebuild -resolvePackageDependencies -project KidsCall.xcodeproj -scheme KidsCall
+      - name: Build (iOS Simulator)
+        working-directory: ios/KidsCall
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project KidsCall.xcodeproj \
+            -scheme KidsCall \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | tee build.log | grep -E "error:|warning: unre|BUILD (SUCCEEDED|FAILED)|\*\* " || true
+          grep -q "BUILD SUCCEEDED" build.log
+      - name: Show errors
+        if: failure()
+        working-directory: ios/KidsCall
+        run: grep -E "error:" build.log | sort -u | head -100 || true
